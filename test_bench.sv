@@ -2,76 +2,144 @@
 
 module simple_tb;
 
-    logic clk;
-    logic rst;
-    logic newd;
+    //--------------------------------------------------
+    // Testbench Signals
+    //--------------------------------------------------
+
+    logic        clk;
+    logic        rst;
+    logic        newd;
     logic [11:0] din;
 
-    logic sclk;
-    logic cs;
-    logic mosi;
-    logic done;
+    logic        sclk;
+    logic        cs;
+    logic        mosi;
+    logic        done;
     logic [11:0] dout;
 
+    integer i;
+
+    //--------------------------------------------------
+    // DUT Instantiation
+    //--------------------------------------------------
+
     spi_top dut (
-        .clk(clk),
-        .rst(rst),
-        .newd(newd),
-        .din(din),
-        .sclk(sclk),
-        .cs(cs),
-        .mosi(mosi),
-        .done(done),
-        .dout(dout)
+        .clk  (clk),
+        .rst  (rst),
+        .newd (newd),
+        .din  (din),
+
+        .sclk (sclk),
+        .cs   (cs),
+        .mosi (mosi),
+        .done (done),
+        .dout (dout)
     );
 
+    //--------------------------------------------------
+    // Clock Generation (100 MHz)
+    //--------------------------------------------------
+
     initial begin
-        clk = 0;
+        clk = 1'b0;
         forever #5 clk = ~clk;
     end
+
+    //--------------------------------------------------
+    // Waveform Dump
+    //--------------------------------------------------
 
     initial begin
         $dumpfile("spi.vcd");
         $dumpvars(0, simple_tb);
     end
 
-    integer i;
+    //--------------------------------------------------
+    // Test Sequence
+    //--------------------------------------------------
 
     initial begin
 
-        rst  = 1;
-        newd = 0;
-        din  = 0;
+        //--------------------------------------------------
+        // Initialize Signals
+        //--------------------------------------------------
+
+        rst  = 1'b1;
+        newd = 1'b0;
+        din  = '0;
+
+        //--------------------------------------------------
+        // Apply Reset
+        //--------------------------------------------------
 
         #20;
-        rst = 0;
+        rst = 1'b0;
 
         #20;
 
-        for(i = 0; i < 10; i = i + 1) begin
+        //--------------------------------------------------
+        // Generate Transactions
+        //--------------------------------------------------
 
-            din = $random & 12'hFFF;
+        for(i = 0; i < 10; i = i + 1)
+        begin
+
+            // Random 12-bit data
+            din = $urandom_range(0, 12'hFFF);
+
+            //--------------------------------------------------
+            // Start SPI Transfer
+            //--------------------------------------------------
 
             @(posedge clk);
-            newd = 1;
+            newd = 1'b1;
 
             @(posedge clk);
-            newd = 0;
+            newd = 1'b0;
 
-            @(posedge done);
+            //--------------------------------------------------
+            // Wait for Completion (with Timeout)
+            //--------------------------------------------------
 
-            $display("--------------------------------");
-            $display("Transfer %0d Complete", i+1);
-            $display("TX Data = %03h", din);
-            $display("RX Data = %03h", dout);
+            fork
+            begin
+                @(posedge done);
+            end
+            begin
+                #50000;
+                $fatal("ERROR: SPI transaction timed out.");
+            end
+            join_any
+            disable fork;
 
-            #40;
+            //--------------------------------------------------
+            // Display Results
+            //--------------------------------------------------
+
+            $display("\n--------------------------------------------");
+            $display("Transaction : %0d", i + 1);
+            $display("TX Data     : %03h (%0d)", din, din);
+            $display("RX Data     : %03h (%0d)", dout, dout);
+
+            if (din === dout)
+                $display("STATUS      : PASS");
+            else
+                $display("STATUS      : FAIL");
+
+            $display("--------------------------------------------");
+
+            repeat(4) @(posedge clk);
 
         end
 
-        $display("--------------------------------");
-        $display("Simulation Finished Successfully");
-        $display("--------------------------------");
+        //--------------------------------------------------
+        // End of Simulation
+        //--------------------------------------------------
+
+        $display("\n============================================");
+        $display("SPI VERIFICATION COMPLETED SUCCESSFULLY");
+        $display("Total Transactions : %0d", i);
+        $display("============================================\n");
 
         #20;
         $finish;
