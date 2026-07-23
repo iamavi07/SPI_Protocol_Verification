@@ -1,179 +1,1128 @@
-# SPI PROTOCOL VERIFICATION USING SYSTEM VERILOG
+# Design and Verification of SPI Protocol using SystemVerilog
 
-Created SPI master and slave RTL in SystemVerilog using 3-wires (MOSI, SCLK, CS).
-Developed a class-based layered verification environment testbench to verify accurate serial data transfer.
+A complete RTL implementation and verification of a **3-wire Serial Peripheral Interface (SPI)** protocol using **SystemVerilog**, featuring a parameterized SPI Master, SPI Slave, directed RTL verification, and a layered class-based verification environment.
 
-<!-- TOC start (generated with https://github.com/derlin/bitdowntoc) -->
+The project demonstrates the complete digital design flow from **RTL development** to **functional verification**, employing modern SystemVerilog verification constructs such as **interfaces, transactions, mailboxes, virtual interfaces, randomized stimulus generation, monitor, scoreboard, and environment classes**.
 
-## CONTENTS
+Unlike traditional SPI implementations, this project focuses on **unidirectional master-to-slave communication**, utilizing **MOSI (Master Out Slave In)**, **Serial Clock (SCLK)**, and **Chip Select (CS)** signals. The SPI Master serializes a 12-bit parallel data word, while the SPI Slave reconstructs the transmitted data through shift-register based serial reception.
 
-- [INTRODUCTION](#introduction)
-  - [What is SPI?](#what-is-spi)
-  - [Why SPI?](#why-spi)
-- [DESIGN SPECIFICATION](#design-specification)
-- [BLOCK DIAGRAM](#block-diagram)
-- [SPI MASTER](#spi-master)
-  - [Signals ](#signals)
-- [SPI SLAVE](#spi-slave)
-  - [Signals ](#signals-1)
-- [WORKING](#working)
-  - [Serial clock (sclk)](#serial-clock-sclk)
-  - [Chip Select signal (cs)](#chip-select-signal-cs)
-  - [MOSI](#mosi)
-- [FLOWCHART](#flowchart)
-  - [Serial Clock Generation](#serial-clock-generation)
-- [SV FILES](#SV-Files)
-- [RESULTS](#results)
-  - [Simulation Waveform](#waveform)
-  - [Console Output](#console)
+---
 
-<!-- TOC end -->
+# Table of Contents
 
-<!-- TOC --><a name="introduction"></a>
+- Project Overview
+- Key Features
+- SPI Protocol Overview
+- Design Specifications
+- System Architecture
+- RTL Design
+- Verification Methodology
+- Simulation Results
+- Project Directory
+- How to Run
+- Future Improvements
+- Key Learnings
 
-## INTRODUCTION
+---
 
-<!-- TOC --><a name="what-is-spi"></a>
+# Project Overview
 
-### What is SPI?
+This project implements the complete design and verification flow of a Serial Peripheral Interface (SPI) communication system using SystemVerilog.
 
-SPI stands for Serial Peripheral Interface, originally developed by Motorola. It is a synchronous serial communication protocol, meaning data transfer is aligned with the edges of a clock.
-It uses four main signals — MOSI, MISO, SCLK, and Chip Select — to enable communication between a master, usually a microcontroller, and slave devices such as ADCs, DACs, sensors, EEPROMs, or displays. SPI supports full-duplex transfer, so data can be sent and received simultaneously. Because it is simple, fast, and flexible, it is very popular in embedded systems and digital communication applications.
+The implementation consists of:
 
-<!-- TOC --><a name="why-spi"></a>
+- RTL design of an SPI Master
+- RTL design of an SPI Slave
+- Top-level SPI integration module
+- Directed RTL verification testbench
+- Layered SystemVerilog verification environment
+- Self-checking verification using a scoreboard
+- Randomized transaction generation
+- Functional simulation and waveform analysis
 
-### Why SPI?
+The objective is to demonstrate both **hardware design** and **design verification** methodologies commonly employed during ASIC and FPGA development.
 
-SPI is used because it’s simple, fast, and efficient for short-distance communication. It supports full-duplex data transfer, meaning data can be sent and received at the same time. One unique benefit of SPI is the fact that data can be transferred without interruption. Any number of bits can be sent or received in a continuous stream. With I2C and UART, data is sent in packets, limited to a specific number of bits. Start and stop conditions define the beginning and end of each packet, so the data is interrupted during transmission. The trade-off is that it requires more pins, especially if multiple slaves are connected, but in cases where speed and simplicity are more important, SPI is usually preferred.
+The verification environment validates correct transmission of randomized 12-bit data words from the SPI Master to the SPI Slave while ensuring protocol correctness through automated data comparison.
 
-<!-- TOC --><a name="design-specification"></a>
+---
 
-## DESIGN SPECIFICATION
+# Key Features
 
-<!-- TOC --><a name="block-diagram"></a>
+### RTL Design
 
-## BLOCK DIAGRAM
+- 3-wire SPI architecture (MOSI, SCLK, CS)
+- SPI Master implemented using synthesizable SystemVerilog
+- SPI Slave implemented using synthesizable SystemVerilog
+- 12-bit serial data transmission
+- MSB-first serialization
+- Shift-register based transmitter
+- Shift-register based receiver
+- Clock-divider based SPI clock generation
+- Automatic Chip Select generation
+- Transaction completion indication using `done`
+- Modular top-level integration
 
-<img width="1467" height="395" alt="Screenshot 2025-08-20 185135" src="https://github.com/user-attachments/assets/e360ed05-f42c-4cec-983d-f1cb59d6591f" />
-In our design we do not have MISO (Master In Slave Out) signal as only master transmits the data and the slave reads it.
+### Verification
 
-<!-- TOC --><a name="spi-master"></a>
+- Directed RTL verification (`simple_tb.sv`)
+- Layered class-based verification (`test.sv`)
+- Randomized transaction generation
+- Self-checking verification
+- Mailbox-based communication
+- Virtual Interface based DUT connection
+- Generator–Driver–Monitor–Scoreboard architecture
+- Waveform debugging
+- Console-based protocol verification
 
-## SPI MASTER
+---
 
-<!-- TOC --><a name="signals"></a>
+# SPI Protocol Overview
 
-### Signals
+Serial Peripheral Interface (SPI) is a synchronous serial communication protocol originally introduced by Motorola for high-speed communication between digital devices.
 
-| NAME | TYPE   | DESCRIPTION                                                                      |
-| ---- | ------ | -------------------------------------------------------------------------------- |
-| clk  | Input  | The main system clock.                                                           |
-| rst  | Input  | Active low reset signal.                                                         |
-| newd | Input  | control signals that goes high when new data is to be transmitted via SPI.       |
-| din  | Input  | 12 bit data input.                                                               |
-| cs   | Output | Chip select signal for selecting slave. It is active low when transmitting data. |
-| mosi | Output | Master out Slave In - used to transmit data serially from master to slave.       |
-| sclk | Output | Serial clock that synchronizes with slave.                                       |
+SPI follows a **master-slave communication model**, where the master initiates every transaction by generating the serial clock and controlling the Chip Select signal.
 
-<!-- TOC --><a name="spi-slave"></a>
+Unlike UART or I²C, SPI is capable of continuous high-speed serial communication because it does not require start or stop bits for every transferred byte.
 
-## SPI SLAVE
+A standard SPI interface consists of four signals:
 
-<!-- TOC --><a name="signals-1"></a>
+| Signal | Description |
+|---------|-------------|
+| MOSI | Master Out Slave In |
+| MISO | Master In Slave Out |
+| SCLK | Serial Clock |
+| CS / SS | Chip Select |
 
-### Signals
+This implementation uses only **three signals**:
 
-| NAME | TYPE   | DESCRIPTION                                                                      |
-| ---- | ------ | -------------------------------------------------------------------------------- |
-| cs   | Input  | Chip select signal for selecting slave. It is active low when transmitting data. |
-| mosi | Input  | Master out Slave In - used to receive data serially from master.                 |
-| sclk | Input  | Serial clock that synchronizes with master.                                      |
-| dout | Output | 12 bit data out.                                                                 |
-| done | Output | Indicates that the data is received by slave                                     |
+- MOSI
+- SCLK
+- CS
 
-<!-- TOC --><a name="working"></a>
+Since communication is **unidirectional (Master → Slave)**, the MISO line is intentionally omitted.
 
-## WORKING
+---
 
-<!-- TOC --><a name="serial-clock-sclk"></a>
+# Design Specifications
 
-### Serial clock (sclk)
+| Parameter | Value |
+|-----------|------|
+| Protocol | SPI |
+| Communication | Master → Slave |
+| Data Width | 12 bits |
+| Transfer Direction | MSB First |
+| SPI Signals | MOSI, SCLK, CS |
+| MISO | Not Implemented |
+| Clock Source | System Clock |
+| SPI Clock | Generated by Master |
+| Clock Divider | Divide-by-8 |
+| Reset | Active High |
+| Verification | Directed + Layered SystemVerilog |
 
-- The clock signal sclk is generated by the master. Slaves do not require their own clocks, even when they are transmitting data to master.
-- Speed usually in MHz range -- usually fater than UART or I2C.
-- The clock signal synchronizes the output of data bits from the master to the sampling of bits by the slave.
-- One bit of data is transferred in each clock cycle, so the speed of data transfer is determined by the frequency of the clock signal.
-- SPI communication is always initiated by the master since the master configures and generates the clock signal.
-- Clock can be idle low or idle high. (In our design, it is idle low)
-- Data can be sampled at positive or negative edge of clock.
+---
 
-<!-- TOC --><a name="chip-select-signal-cs"></a>
+# System Architecture
 
-### Chip Select signal (cs)
-
-- Also called 'Slave Select' (ss).
-- The master can choose which slave it wants to talk to by setting the slave’s CS/SS line to a low voltage level.
-- Then, the slave listens for sclk and mosi.
-- In the idle, non-transmitting state, the slave select line is kept at a high voltage level.
-- Multiple CS/SS pins may be available on the master, which allows for multiple slaves to be wired in parallel. (we only have 1 slave in our design)
-
-<!-- TOC --><a name="mosi"></a>
-
-### MOSI
-
-- The master sends data to the slave bit by bit, in serial through the MOSI line.
-- The slave receives the data sent from the master at the MOSI pin.
-- Data sent from the master to the slave is usually sent with the most significant bit first.
-
-<!-- TOC --><a name="flowchart"></a>
-
-## FLOWCHART
-
-  <img width="400" height="600" alt="Screenshot 2025-08-20 143329" src="https://github.com/user-attachments/assets/7029fb77-2687-479d-9dad-a1b686bf4662" />
-
-1.  If newd signal is HIGH, start sampling the data on din bus and start transmitting it to slave device.
-2.  cs = 1 (default value); no transmission
-3.  cs = 0 ; transmission start
-4.  sclk is usually 4 times slower than system clock. This may differ for different FPGA boards.
-5.  In our design, random count (divide by 20) is used for generating serial clock.
-
-<!-- TOC --><a name="serial-clock-generation"></a>
-
-### Serial Clock Generation
-
-System clock = Fclk <br>
-SPI clock = Fsclk <br>
-Fsclk = Fclk / 20 (divide by 20) <br>
-=> Tsclk = 20\*Tclk <br>
-Therefore, sclk is on for 10xTclk and off for 10xTclk
-
-<!-- TOC --><a name="SV-Files"></a>
-
-## SV FILES
-
-```md
-├── spi_top.sv
-│ ├── spi_master.sv
-│ ├── spi_slave.sv
-├── simple_tb.sv
-├── test.sv
 ```
 
-- `simple_tb.sv` is a simple Verilog testbench to verify the functionality.
-- `test.sv` is a System Verilog class-based testbench verification environment to verify the bit by bit serial data transfer.
+                     +---------------------+
+                     |     simple_tb       |
+                     |     or test.sv      |
+                     +----------+----------+
+                                |
+                                |
+                                v
+                       +------------------+
+                       |     spi_top      |
+                       +--------+---------+
+                                |
+                +---------------+---------------+
+                |                               |
+                |                               |
+                v                               v
+         +--------------+                +--------------+
+         | SPI Master   |                | SPI Slave    |
+         +--------------+                +--------------+
+                |                               ^
+                |                               |
+                +------ MOSI -------------------+
+                +------ SCLK -------------------+
+                +------ CS ---------------------+
 
-<!-- TOC --><a name="results"></a>
+```
 
-## RESULTS
+The SPI Master generates:
 
-<!-- TOC --><a name="waveform"></a>
+- Serial Clock (`SCLK`)
+- Chip Select (`CS`)
+- Serial Data (`MOSI`)
 
-### Simulation Waveform
+The SPI Slave receives these signals and reconstructs the transmitted 12-bit data word.
 
-![waveform](https://github.com/iamavi07/SPI_Protocol_Verification/blob/main/SIM/GTKWave.png)
+All protocol functionality is integrated inside the `spi_top` module, which serves as the DUT for both verification environments.
 
-<!-- TOC --><a name="console"></a>
+---
+# RTL Design
 
-### Console Output
+The SPI subsystem is implemented using a modular RTL architecture consisting of three synthesizable SystemVerilog modules.
 
-![Console](https://github.com/iamavi07/SPI_Protocol_Verification/blob/main/SIM/console.png)
+```
+                    +----------------------+
+                    |      spi_top         |
+                    +----------+-----------+
+                               |
+                +--------------+--------------+
+                |                             |
+                |                             |
+                ▼                             ▼
+        +----------------+            +----------------+
+        |  spi_master    |            |   spi_slave    |
+        +----------------+            +----------------+
+```
+
+The top-level module instantiates both the SPI Master and SPI Slave and interconnects them using the SPI interface signals.
+
+The design follows a clean hierarchical architecture, making each module independently reusable and simplifying functional verification.
+
+---
+
+# SPI Master
+
+The SPI Master controls the complete communication process. It initiates every SPI transaction, generates the serial clock, drives the Chip Select signal, serializes the input data, and indicates transaction completion.
+
+## Inputs
+
+| Signal | Width | Description |
+|---------|------|-------------|
+| clk | 1 | System clock |
+| rst | 1 | Active-high synchronous reset |
+| newd | 1 | Starts a new SPI transaction |
+| din | 12 | Parallel input data |
+
+## Outputs
+
+| Signal | Width | Description |
+|---------|------|-------------|
+| sclk | 1 | SPI Serial Clock |
+| cs | 1 | Active-low Chip Select |
+| mosi | 1 | Serial Data Output |
+| done | 1 | Transaction Complete |
+
+---
+
+## Internal Architecture
+
+The SPI Master consists of four major functional blocks.
+
+### Shift Register
+
+A 12-bit shift register stores the input data before transmission.
+
+```
+Parallel Data
+
+110010101011
+
+↓
+
+Shift Register
+
+↓
+
+Bit11 → Bit10 → ... → Bit0
+```
+
+The most significant bit is transmitted first (MSB-first transmission).
+
+---
+
+### Clock Divider
+
+The SPI clock is generated internally from the system clock.
+
+A counter divides the incoming system clock to produce a lower-frequency SPI clock.
+
+```
+System Clock
+
+↓
+
+Clock Divider
+
+↓
+
+SPI Clock (SCLK)
+```
+
+The implementation generates the SPI clock by dividing the system clock by **8**, allowing reliable synchronization between the transmitter and receiver.
+
+---
+
+### Bit Counter
+
+A 4-bit counter tracks the number of transmitted bits.
+
+```
+12
+
+↓
+
+11
+
+↓
+
+10
+
+↓
+
+...
+
+↓
+
+1
+
+↓
+
+Transaction Complete
+```
+
+After transmitting all twelve bits, the transaction terminates automatically.
+
+---
+
+### Transmission Controller
+
+The transmission sequence is controlled using the internal control signals.
+
+```
+Idle
+
+↓
+
+newd asserted
+
+↓
+
+CS goes LOW
+
+↓
+
+Generate SCLK
+
+↓
+
+Transmit 12 Bits
+
+↓
+
+CS goes HIGH
+
+↓
+
+done asserted
+
+↓
+
+Idle
+```
+
+This allows continuous transmission of multiple data words without external control logic.
+
+---
+
+# SPI Slave
+
+The SPI Slave receives the serial data generated by the SPI Master and reconstructs the original 12-bit word.
+
+Unlike the master, the slave does not generate its own clock.
+
+It only samples incoming data using the master's serial clock.
+
+---
+
+## Inputs
+
+| Signal | Width | Description |
+|---------|------|-------------|
+| rst | 1 | Active-high reset |
+| sclk | 1 | SPI Serial Clock |
+| cs | 1 | Active-low Chip Select |
+| mosi | 1 | Serial Data Input |
+
+---
+
+## Outputs
+
+| Signal | Width | Description |
+|---------|------|-------------|
+| dout | 12 | Parallel reconstructed data |
+
+---
+
+## Receive Logic
+
+The SPI Slave continuously monitors the Chip Select signal.
+
+```
+CS = 1
+
+↓
+
+Ignore Bus Activity
+
+↓
+
+CS = 0
+
+↓
+
+Receive Serial Data
+```
+
+When CS becomes active (LOW), the slave begins sampling the MOSI line on every rising edge of the SPI clock.
+
+---
+
+### Serial Reception
+
+Each received bit is shifted into a 12-bit shift register.
+
+```
+MOSI
+
+↓
+
+Shift Register
+
+↓
+
+000000000000
+
+↓
+
+100000000000
+
+↓
+
+110000000000
+
+↓
+
+...
+
+↓
+
+110010101011
+```
+
+After twelve clock cycles, the shift register contains the complete received word.
+
+The reconstructed value is transferred to the output register (`dout`).
+
+---
+
+# SPI Top Module
+
+The `spi_top` module integrates the SPI Master and SPI Slave into a single reusable subsystem.
+
+It provides a clean abstraction layer for simulation and verification.
+
+```
+             +-------------------+
+             |     spi_top       |
+             +---------+---------+
+                       |
+          +------------+------------+
+          |                         |
+          ▼                         ▼
+   SPI Master                 SPI Slave
+```
+
+The SPI Master outputs (`SCLK`, `CS`, `MOSI`) are directly connected to the corresponding SPI Slave inputs.
+
+This architecture closely resembles how protocol IP blocks are integrated in FPGA and ASIC designs.
+
+---
+
+# Data Transmission Sequence
+
+A complete SPI transaction proceeds through the following stages.
+
+```
+Reset Released
+
+↓
+
+newd = 1
+
+↓
+
+Input data sampled
+
+↓
+
+CS asserted LOW
+
+↓
+
+SCLK generation begins
+
+↓
+
+MSB transmitted
+
+↓
+
+Remaining 11 bits shifted
+
+↓
+
+Slave reconstructs data
+
+↓
+
+done asserted
+
+↓
+
+CS deasserted HIGH
+
+↓
+
+Ready for next transaction
+```
+
+Each transaction transfers exactly **12 bits**, ensuring deterministic communication between the master and slave.
+
+---
+
+# Serial Clock Generation
+
+The SPI Serial Clock is internally derived from the system clock using a clock-divider circuit.
+
+```
+System Clock (clk)
+
+↓
+
+Clock Divider
+
+↓
+
+SPI Clock (sclk)
+```
+
+For the implemented design,
+
+```
+Fsclk = Fclk / 8
+```
+
+Therefore,
+
+```
+Tsclk = 8 × Tclk
+```
+
+This lower-frequency serial clock allows reliable bit synchronization between the transmitting master and receiving slave.
+
+The SPI clock remains **idle LOW** whenever no transmission is active and starts toggling only after the `newd` signal initiates a new transaction.
+
+---
+
+# Design Characteristics
+
+- Fully synthesizable SystemVerilog RTL
+- Modular hierarchical architecture
+- MSB-first serial transmission
+- Shift-register based transmitter and receiver
+- Automatic SPI clock generation
+- Automatic Chip Select control
+- Deterministic 12-bit data transfer
+- Single-master, single-slave communication
+- Compatible with FPGA and ASIC simulation flows
+
+# Verification Methodology
+
+The SPI subsystem is verified using two independent verification environments.
+
+1. **Directed RTL Verification (`simple_tb.sv`)**
+2. **Layered Class-Based Verification (`test.sv`)**
+
+The first environment is intended for rapid RTL debugging and waveform analysis, while the second demonstrates a reusable verification architecture similar to those employed in ASIC verification flows.
+
+---
+
+# Directed RTL Verification
+
+The `simple_tb.sv` testbench performs directed functional verification of the SPI protocol.
+
+Its primary objective is to validate the RTL functionality before applying a structured verification methodology.
+
+## Verification Flow
+
+```
+Generate Clock
+
+↓
+
+Apply Reset
+
+↓
+
+Generate Random Data
+
+↓
+
+Assert newd
+
+↓
+
+Master Starts SPI Transfer
+
+↓
+
+Slave Receives Data
+
+↓
+
+Wait for done
+
+↓
+
+Compare TX and RX Data
+
+↓
+
+PASS / FAIL
+```
+
+The testbench repeatedly generates random 12-bit input values and verifies that the received output exactly matches the transmitted data.
+
+---
+
+## Features
+
+- Clock generation
+- Reset generation
+- Randomized data stimulus
+- Automatic transaction sequencing
+- Self-checking data comparison
+- Console-based verification
+- Waveform generation for debugging
+
+This testbench provides quick functional validation and serves as the first stage of RTL verification.
+
+---
+
+# Layered SystemVerilog Verification Environment
+
+In addition to the directed testbench, a reusable class-based verification environment has been developed using SystemVerilog object-oriented programming concepts.
+
+The environment separates stimulus generation, DUT driving, monitoring, and checking into independent reusable components.
+
+```
+                +----------------------+
+                |      Generator       |
+                +----------+-----------+
+                           |
+                           |
+                        Mailbox
+                           |
+                           ▼
+                +----------------------+
+                |       Driver         |
+                +----------+-----------+
+                           |
+                 Virtual Interface
+                           |
+                           ▼
+                     +-----------+
+                     |  SPI DUT  |
+                     +-----------+
+                           |
+                           ▼
+                +----------------------+
+                |      Monitor         |
+                +----------+-----------+
+                           |
+                        Mailbox
+                           |
+                           ▼
+                +----------------------+
+                |    Scoreboard        |
+                +----------------------+
+```
+
+This layered architecture improves modularity, scalability, and reusability while simplifying debugging and maintenance.
+
+---
+
+# Verification Components
+
+## Interface
+
+The `spi_if` interface encapsulates all DUT signals into a single reusable communication interface.
+
+Signals include
+
+- clk
+- rst
+- newd
+- din
+- dout
+- done
+- sclk
+
+Using an interface eliminates long port lists and simplifies communication between verification components.
+
+---
+
+## Transaction
+
+The transaction class models a single SPI transfer.
+
+Each transaction stores
+
+- Input data
+- Output data
+- Transaction control information
+
+Randomized stimulus is generated by randomizing the transaction object before sending it to the driver.
+
+```
+Transaction
+
+↓
+
+Randomize
+
+↓
+
+Copy
+
+↓
+
+Mailbox
+```
+
+The copy method ensures every generated transaction remains independent.
+
+---
+
+## Generator
+
+The Generator creates randomized SPI transactions.
+
+Responsibilities include
+
+- Randomizing 12-bit input data
+- Creating transaction objects
+- Sending transactions through a mailbox
+- Synchronizing with the scoreboard
+
+The generator remains completely independent of the DUT implementation.
+
+---
+
+## Driver
+
+The Driver converts high-level transactions into signal-level DUT activity.
+
+Responsibilities
+
+- Apply reset
+- Drive newd
+- Drive input data
+- Synchronize with SPI completion
+- Send expected data to the scoreboard
+
+The driver communicates with the DUT exclusively through a virtual interface.
+
+---
+
+## Monitor
+
+The Monitor passively observes DUT outputs without driving any signals.
+
+Responsibilities
+
+- Wait for transaction completion
+- Capture DUT output
+- Forward observed data to the scoreboard
+
+Because the monitor is passive, it can be reused across multiple verification environments.
+
+---
+
+## Scoreboard
+
+The Scoreboard performs automated functional checking.
+
+It compares
+
+```
+Expected Data
+
+↓
+
+Received Data
+
+↓
+
+PASS / FAIL
+```
+
+Expected data is received from the Driver.
+
+Observed data is received from the Monitor.
+
+Whenever both values match, the transaction is reported as successful.
+
+Otherwise, a data mismatch is reported.
+
+This enables fully automated self-checking verification without manual waveform inspection.
+
+---
+
+## Environment
+
+The Environment class integrates every verification component.
+
+It is responsible for
+
+- Constructing all verification objects
+- Connecting mailboxes
+- Connecting virtual interfaces
+- Coordinating verification phases
+- Starting parallel execution
+
+The complete verification flow is executed using
+
+```
+Pre-Test
+
+↓
+
+Reset DUT
+
+↓
+
+Fork
+
+Generator
+
+Driver
+
+Monitor
+
+Scoreboard
+
+↓
+
+Post-Test
+
+↓
+
+Finish Simulation
+```
+
+---
+
+# Verification Communication
+
+The verification environment employs mailbox-based communication between independent components.
+
+```
+Generator
+
+↓
+
+Mailbox
+
+↓
+
+Driver
+
+↓
+
+SPI DUT
+
+↓
+
+Monitor
+
+↓
+
+Mailbox
+
+↓
+
+Scoreboard
+```
+
+Mailboxes provide synchronized communication without creating direct dependencies between verification components.
+
+This architecture improves modularity and simplifies future expansion.
+
+---
+
+# Virtual Interface
+
+The Driver and Monitor communicate with the DUT using a virtual interface.
+
+```
+Interface
+
+↓
+
+Virtual Interface
+
+↓
+
+Driver
+
+↓
+
+Monitor
+
+↓
+
+SPI DUT
+```
+
+Using virtual interfaces decouples verification components from physical signal connections, improving code reuse and maintainability.
+
+---
+
+# Verification Strategy
+
+The verification flow follows a layered methodology.
+
+1. Generate randomized transaction.
+2. Transfer transaction to Driver.
+3. Driver stimulates DUT.
+4. SPI Master serializes data.
+5. SPI Slave reconstructs received data.
+6. Monitor captures DUT output.
+7. Scoreboard compares expected and received values.
+8. Verification result is automatically reported.
+
+This methodology minimizes manual debugging while enabling repeatable functional verification.
+
+---
+
+# Functional Verification Summary
+
+The implemented verification environment validates
+
+- Correct SPI transaction initiation
+- Proper Chip Select operation
+- Correct SPI clock generation
+- MSB-first serial transmission
+- Accurate serial-to-parallel reconstruction
+- Correct completion signaling
+- End-to-end data integrity
+
+Multiple randomized transactions are executed automatically, ensuring reliable verification across a broad range of input patterns.
+
+---
+
+# Verification Flow Diagram
+
+```
+Random Transaction
+
+↓
+
+Generator
+
+↓
+
+Driver
+
+↓
+
+SPI Master
+
+↓
+
+Serial Transmission
+
+↓
+
+SPI Slave
+
+↓
+
+Monitor
+
+↓
+
+Scoreboard
+
+↓
+
+PASS / FAIL
+```
+
+The separation between stimulus generation, observation, and checking follows standard verification methodology and significantly improves scalability compared to monolithic testbenches.
+---
+
+# Simulation Results
+
+The SPI subsystem was functionally verified using both directed and constrained-random verification approaches.
+
+Simulation confirms that:
+
+- The SPI Master correctly serializes 12-bit input data.
+- The Chip Select signal is asserted only during active communication.
+- The Serial Clock is generated internally by the master.
+- Data is transmitted MSB-first over the MOSI line.
+- The SPI Slave samples incoming data correctly.
+- The received serial data is reconstructed into the original 12-bit parallel word.
+- The verification environment automatically validates transmitted and received data using a self-checking scoreboard.
+
+---
+
+## Functional Waveform
+
+The simulation waveform demonstrates the complete SPI transaction.
+
+The following protocol signals can be observed:
+
+- System Clock (`clk`)
+- Reset (`rst`)
+- Transaction Request (`newd`)
+- Chip Select (`cs`)
+- Serial Clock (`sclk`)
+- Master Out Slave In (`mosi`)
+- Input Data (`din`)
+- Output Data (`dout`)
+- Transaction Complete (`done`)
+
+During each transaction:
+
+1. The input data is loaded into the master.
+2. `CS` transitions LOW to initiate communication.
+3. The master generates the SPI clock.
+4. Twelve data bits are transmitted serially over `MOSI`.
+5. The slave samples each bit and reconstructs the original data.
+6. `done` is asserted upon successful completion.
+7. `CS` returns HIGH, indicating the end of the SPI transaction.
+
+> **Simulation Waveform**
+>
+<img width="1503" height="877" alt="SPI-Protocol_waveform" src="https://github.com/user-attachments/assets/f942a11b-7011-4705-80d0-2222ceb53311" />
+
+
+
+
+```md
+![Waveform](SIM/waveform.png)
+```
+
+---
+
+## Verification Console Output
+
+The layered verification environment produces a transaction-level execution log that records the activity of each verification component.
+
+Typical simulation output includes:
+
+- Generator creating randomized transactions
+- Driver applying stimulus to the DUT
+- Monitor capturing DUT responses
+- Scoreboard comparing expected and received data
+- PASS/FAIL status for every transaction
+
+Example:
+
+```
+[GEN] Generated Data = A35
+
+[DRV] Driving Transaction
+
+[MON] Captured Data = A35
+
+[SCO] DATA MATCHED
+
+-------------------------------------
+```
+
+The self-checking scoreboard automatically reports mismatches, eliminating the need for manual waveform inspection during regression testing.
+
+---
+
+# Simulation Flow
+
+```
+Compile RTL
+
+↓
+
+Compile Testbench
+
+↓
+
+Run Simulation
+
+↓
+
+Generate Random Transaction
+
+↓
+
+Drive DUT
+
+↓
+
+Capture DUT Output
+
+↓
+
+Compare Results
+
+↓
+
+PASS / FAIL
+
+↓
+
+End Simulation
+```
+
+This automated flow enables repeatable functional verification and simplifies debugging.
+
+## Tools
+
+- SystemVerilog
+- ModelSim / QuestaSim
+- Vivado Simulator
+- GTKWave (optional)
+- Git & GitHub
+
+# Key Learnings
+
+This project provided practical experience in both digital design and functional verification workflows.
+
+Major learning outcomes include:
+
+- Designing synthesizable communication protocols using SystemVerilog
+- Implementing serial data transmission using shift registers
+- Generating protocol-specific clocks through clock division
+- Developing reusable layered verification environments
+- Applying constrained-random verification techniques
+- Automating functional checking using scoreboards
+- Debugging protocol behavior through simulation waveforms
+- Structuring verification components for scalability and reuse
+
+The project reflects a complete RTL-to-verification workflow similar to that followed during FPGA prototyping and ASIC IP verification.
+
+---
+# Author
+
+**Avinash Tanti**
+
+M.Tech — Communication Engineering & Networks  
+National Institute of Technology Karnataka (NITK Surathkal)
