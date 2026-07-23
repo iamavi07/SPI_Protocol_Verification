@@ -27,50 +27,64 @@ module spi_master(
             shift_reg <= 12'd0;
         end
         else begin
+            // Default: done is a one-clock pulse
             done <= 1'b0;
 
-            if (!busy && newd) begin
-                busy      <= 1'b1;
-                cs        <= 1'b0;
-                sclk      <= 1'b0;
-                clk_div   <= 3'd0;
-                bit_cnt   <= 4'd12;
-                shift_reg <= din;
-                mosi      <= din[11];
+            //--------------------------------------------------
+            // Idle State : Wait for new data
+            //--------------------------------------------------
+            if (!busy) begin
+                if (newd) begin
+                    busy      <= 1'b1;
+                    cs        <= 1'b0;       // Select slave
+                    sclk      <= 1'b0;
+                    clk_div   <= 3'd0;
+                    bit_cnt   <= 4'd12;
+                    shift_reg <= din;
+                    mosi      <= din[11];    // Send MSB first
+                end
             end
 
-            else if (busy) begin
+            //--------------------------------------------------
+            // Transmission State
+            //--------------------------------------------------
+            else begin
 
                 clk_div <= clk_div + 1'b1;
 
-                // Divide system clock by 4
-                if (clk_div == 3) begin
-                    clk_div <= 0;
+                // SPI clock generation (Fclk/8)
+                if (clk_div == 3'd3) begin
+                    clk_div <= 3'd0;
                     sclk <= ~sclk;
 
+                    //------------------------------------------
                     // Falling edge:
-                    // shift next bit out
+                    // Shift next bit onto MOSI
+                    //------------------------------------------
                     if (sclk) begin
-                        shift_reg <= {shift_reg[10:0],1'b0};
+                        shift_reg <= {shift_reg[10:0], 1'b0};
 
                         if (bit_cnt > 1)
                             mosi <= shift_reg[10];
                     end
 
+                    //------------------------------------------
                     // Rising edge:
-                    // count transmitted bits
+                    // Slave samples MOSI
+                    //------------------------------------------
                     else begin
+
                         bit_cnt <= bit_cnt - 1'b1;
 
+                        // Last bit transmitted
                         if (bit_cnt == 1) begin
                             busy <= 1'b0;
                             done <= 1'b1;
+                            cs   <= 1'b1;     // Deselect slave
+                            sclk <= 1'b0;     // Return clock to idle
+                            mosi <= 1'b0;
                         end
 
-                        if (!busy && done) begin
-                            cs   <= 1;
-                            sclk <= 0;
-                        end
                     end
                 end
             end
